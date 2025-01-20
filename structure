@@ -1,0 +1,20 @@
+backend/
+  ├── config/
+  │   └── db.js
+  ├── controllers/
+  │   ├── authController.js
+  │   ├── taskController.js
+  │   └── postController.js
+  ├── middleware/
+  │   ├── auth.js
+  │   └── upload.js
+  ├── models/
+  │   ├── User.js
+  │   ├── Task.js
+  │   └── Post.js
+  ├── routes/
+  │   ├── auth.js
+  │   ├── tasks.js
+  │   └── posts.js
+  ├── .env
+  └── server.js 
