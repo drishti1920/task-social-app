@@ -17,6 +17,12 @@ const postSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  imageMetadata: {
+    width: Number,
+    height: Number,
+    format: String,
+    size: Number
   }
 }, {
   timestamps: true

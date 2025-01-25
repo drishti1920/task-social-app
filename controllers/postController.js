@@ -10,20 +10,48 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Helper function to delete file from local storage
 const deleteLocalFile = (filePath) => {
   fs.unlink(filePath, (err) => {
     if (err) console.error('Error deleting local file:', err);
   });
 };
 
-// @desc    Get all posts
-// @route   GET /api/posts
+const validateImage = (file) => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif'];
+  const maxSize = 5 * 1024 * 1024; // 5MB
+
+  if (!allowedTypes.includes(file.mimetype)) {
+    throw new Error('Invalid file type. Only JPEG, PNG, JPG and GIF are allowed');
+  }
+
+  if (file.size > maxSize) {
+    throw new Error('File too large. Maximum size is 5MB');
+  }
+};
+
+const uploadToCloudinary = async (filePath) => {
+  try {
+    const result = await cloudinary.uploader.upload(filePath, {
+      folder: 'task-social-app',
+      use_filename: true,
+      resource_type: 'auto',
+      quality: 'auto', // Automatic quality optimization
+      fetch_format: 'auto', // Automatic format optimization
+      transformation: [
+        { width: 1200, crop: 'limit' }, // Limit max width while maintaining aspect ratio
+      ]
+    });
+    return result;
+  } catch (error) {
+    throw new Error(`Cloudinary Upload Failed: ${error.message}`);
+  }
+};
+
 exports.getPosts = async (req, res) => {
   try {
     const posts = await Post.find()
       .sort({ createdAt: -1 })
-      .populate('user', 'name'); // Include user's name in the response
+      .populate('user', 'name');
     res.json(posts);
   } catch (err) {
     console.error(err);
@@ -31,9 +59,12 @@ exports.getPosts = async (req, res) => {
   }
 };
 
-// @desc    Create a new post
-// @route   POST /api/posts
+
+
+
 exports.createPost = async (req, res) => {
+  let uploadedImage = null;
+  
   try {
     const { caption } = req.body;
 
@@ -45,40 +76,56 @@ exports.createPost = async (req, res) => {
       return res.status(400).json({ message: 'Please provide a caption' });
     }
 
-    // Upload image to Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: 'task-social-app',
-      use_filename: true,
-      resource_type: 'auto'
-    });
+    const filePath = path.resolve(req.file.path);
 
-    // Create new post
+    validateImage(req.file);
+
+    uploadedImage = await uploadToCloudinary(filePath);
+
     const post = new Post({
       caption,
-      imageUrl: result.secure_url,
+      imageUrl: uploadedImage.secure_url,
       user: req.user.id,
-      cloudinaryId: result.public_id // Store Cloudinary public_id for later deletion
+      cloudinaryId: uploadedImage.public_id,
+      imageMetadata: {
+        width: uploadedImage.width,
+        height: uploadedImage.height,
+        format: uploadedImage.format,
+        size: uploadedImage.bytes
+      }
     });
 
     await post.save();
     await post.populate('user', 'name');
 
-    // Delete local file after upload
-    deleteLocalFile(req.file.path);
+    fs.unlink(filePath, (err) => {
+      if (err) console.error('Error deleting local file:', err);
+    });
 
     res.status(201).json(post);
   } catch (err) {
-    // Delete local file if upload fails
-    if (req.file) {
-      deleteLocalFile(req.file.path);
+    if (uploadedImage && uploadedImage.public_id) {
+      try {
+        await cloudinary.uploader.destroy(uploadedImage.public_id);
+      } catch (cloudinaryError) {
+        console.error('Error deleting failed upload from Cloudinary:', cloudinaryError);
+      }
     }
-    console.error(err);
-    res.status(500).json({ message: 'Error creating post' });
+
+    if (req.file) {
+      const filePath = path.resolve(req.file.path);
+      fs.unlink(filePath, (err) => {
+        if (err) console.error('Error deleting local file:', err);
+      });
+    }
+
+    console.error('Post creation error:', err);
+    res.status(500).json({ 
+      message: err.message || 'Error creating post',
+      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
-
-// @desc    Delete post
-// @route   DELETE /api/posts/:id
 exports.deletePost = async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
@@ -87,12 +134,10 @@ exports.deletePost = async (req, res) => {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-    // Make sure user owns post
     if (post.user.toString() !== req.user.id) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
-    // Delete image from Cloudinary using stored public_id
     if (post.cloudinaryId) {
       await cloudinary.uploader.destroy(post.cloudinaryId);
     }
@@ -105,8 +150,30 @@ exports.deletePost = async (req, res) => {
   }
 };
 
-// @desc    Get user posts
-// @route   GET /api/posts/user/:userId
+exports.updatePost = async (req, res) => {
+  try {
+    const { caption } = req.body;
+    const post = await Post.findById(req.params.id);
+
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    if (post.user.toString() !== req.user.id) {
+      return res.status(401).json({ message: 'Not authorized' });
+    }
+
+    post.caption = caption;
+    await post.save();
+    await post.populate('user', 'name');
+
+    res.json(post);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error updating post' });
+  }
+};
+
 exports.getUserPosts = async (req, res) => {
   try {
     const posts = await Post.find({ user: req.params.userId })

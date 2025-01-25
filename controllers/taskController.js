@@ -1,7 +1,5 @@
 const Task = require('../models/Task');
 
-// @desc    Get all tasks for a user
-// @route   GET /api/tasks
 exports.getTasks = async (req, res) => {
   try {
     const tasks = await Task.find({ user: req.user.id }).sort({ createdAt: -1 });
@@ -12,8 +10,6 @@ exports.getTasks = async (req, res) => {
   }
 };
 
-// @desc    Create a new task
-// @route   POST /api/tasks
 exports.createTask = async (req, res) => {
   try {
     const { title, description } = req.body;
@@ -38,8 +34,6 @@ exports.createTask = async (req, res) => {
   }
 };
 
-// @desc    Update task status
-// @route   PUT /api/tasks/:id
 exports.updateTaskStatus = async (req, res) => {
   try {
     const { status } = req.body;
@@ -70,8 +64,6 @@ exports.updateTaskStatus = async (req, res) => {
   }
 };
 
-// @desc    Delete task
-// @route   DELETE /api/tasks/:id
 exports.deleteTask = async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
@@ -80,7 +72,6 @@ exports.deleteTask = async (req, res) => {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    // Make sure user owns task
     if (task.user.toString() !== req.user.id) {
       return res.status(401).json({ message: 'Not authorized' });
     }
